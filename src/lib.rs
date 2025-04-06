@@ -23,6 +23,9 @@ use std::pin::Pin;
 pub struct Slogger {
     logger: Arc<Logger>,
 
+    #[cfg(feature = "transaction_header")]
+    emit_request_id_header: bool,
+
     #[cfg(feature = "callbacks")]
     request_handlers: Vec<
         Arc<
@@ -101,6 +104,9 @@ impl Slogger {
     pub fn from_logger(logger: Logger) -> Self {
         Self {
             logger: Arc::new(logger),
+
+            #[cfg(feature = "transaction_header")]
+            emit_request_id_header: false,
 
             #[cfg(feature = "callbacks")]
             request_handlers: vec![],
@@ -187,6 +193,15 @@ impl Slogger {
                 "uri" => format!("{}", request.uri()),
             ))
         }
+    }
+
+    /// Set an `X-Request-Id` response header to the request's transaction id.
+    /// Off by default: a logging fairing should not alter responses unless asked.
+    /// Requires the `transaction_header` feature.
+    #[cfg(feature = "transaction_header")]
+    pub fn with_request_id_header(mut self) -> Self {
+        self.emit_request_id_header = true;
+        self
     }
 
     #[cfg(feature = "callbacks")]

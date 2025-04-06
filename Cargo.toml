@@ -46,17 +46,38 @@ slog-term = "2.9"
 slog-bunyan = "2.5"
 
 [features]
+# No optional functionality. Pair with an output feature (`terminal` or
+# `bunyan`), or supply your own slog `Logger` via `Slogger::from_logger`.
 default = []
 
+# Attach async on_request/on_response hooks that can enrich the logger with
+# extra fields before each log line is written.
 callbacks = []
 
+# Per-request UTC timestamp, a UUID that correlates every log line from a single
+# request, and the total elapsed request-to-response time on the response log.
 transactions = ["chrono", "uuid"]
+# Opt-in `X-Request-Id` response header carrying the transaction id, set via
+# `.with_request_id_header()`. Kept separate so plain `transactions` logging
+# never compiles in response-mutating code. Requires `transactions`, which
+# provides the id (enforced via compile_error).
+transaction_header = []
+# Render the transaction's received time in the system local zone instead of
+# UTC. Requires `transactions`, which provides the received time it renders.
 local_time = []
 
+# Enable `Slogger::new_terminal_logger()` for plain-text stdout output.
 terminal = ["slog-term"]
+# Enable `Slogger::new_bunyan_logger()` for bunyan-style JSON output.
 bunyan = ["slog-bunyan"]
+# Honour the `RUST_LOG` env var to set output levels at runtime. Defaults to
+# showing only warn and error when enabled.
 envlogger = ["slog-envlogger"]
 
+# Compile-time maximum log level: any statement above the named level is removed
+# at build time with zero runtime cost. The `max_level_*` set applies to all
+# builds; the `release_max_level_*` set applies only to release builds. These
+# pass straight through to the matching slog features.
 max_level_off = ["slog/max_level_off"]
 max_level_error = ["slog/max_level_error"]
 max_level_warn = ["slog/max_level_warn"]

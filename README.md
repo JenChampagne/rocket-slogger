@@ -1,28 +1,35 @@
 # Rocket Slogger
 
-[Structured logging](https://github.com/slog-rs/slog) middleware for the [Rocket](https://rocket.rs) web framework.
+[Structured logging](https://github.com/slog-rs/slog) middleware for the
+[Rocket](https://rocket.rs) web framework.
 
-When this fairing (middleware) is attached to an instance of Rocket, detailed log messages will automatically
-be generated for every request received and every response sent. The logger can also be injected into individual
-routes to generate additional custom logs at time of request.
+When this fairing (middleware) is attached to an instance of Rocket, detailed
+log messages will automatically be generated for every request received and
+every response sent. The logger can also be injected into individual routes
+to generate additional custom logs at time of request.
 
-On start-up, all configurations are shown as an initial log message. This both lists out the current configuration,
-and can serve as a sort of signal that the web server has been started/restarted. Next is a log message detailing
-the routes available, then one of error status catchers, then one of the host and port the server is listening on.
+On start-up, all configurations are shown as an initial log message.
+This both lists out the current configuration, and can serve as a signal
+that the web server has been started/restarted. Next is a log message
+detailing the routes available, then one of error status catchers,
+then one of the host and port the server is listening on.
 
 ## Setup
 
-Rust toolchain required. See [https://rustup.rs/](https://rustup.rs/) for installation instructions.
+Rust toolchain required. See [https://rustup.rs/](https://rustup.rs/) for
+installation instructions.
 
 Add this crate to your Rust project:
 
 ```toml
-rocket-slogger = "0.1.0"
+rocket-slogger = "1.1"
 ```
 
 ### Quick Start
 
-Instantiate the fairing (middleware) with a [`slog`](https://github.com/slog-rs/slog)-compatible `Logger`, then add it to your Rocket server:
+Instantiate the fairing (middleware) with a
+[`slog`](https://github.com/slog-rs/slog)-compatible `Logger`,
+then add it to your Rocket server:
 
 ```rs
 // Wrap your `slog`-compatible Logger with the fairing
@@ -42,7 +49,7 @@ rocket::custom(config)
 ### When the `envlogger` feature is enabled
 
 Adds support for `RUST_LOG` environment variable handling to control log levels
-output. See the `slog-envlogger` cratte documentation for more details.
+output. See the `slog-envlogger` crate documentation for more details.
 
 ```sh
 RUST_LOG=trace cargo run ...
@@ -56,8 +63,8 @@ By default when enabled, only warning and error levels are displayed.
 
 ### When the `terminal` feature is enabled
 
-The helper function `Slogger::new_terminal_logger()` will setup the logger to output plain text for each
-log message that looks like the following:
+The helper function `Slogger::new_terminal_logger()` will setup the logger
+to output plain text for each log message that looks like the following:
 
 ```
 Mar 15 04:32:00.815 INFO Request, method: GET, path: /, content-type: None, user-agent: vscode-restclient
@@ -67,8 +74,9 @@ Mar 15 04:32:00.815 INFO Response, size: 11, method: GET, path: /, route: always
 
 ### When the `bunyan` feature is enabled
 
-The helper function `Slogger::new_bunyan_logger()` will setup the logger to output
-[bunyan-style](https://github.com/slog-rs/bunyan) JSON objects for each log message that looks like the following:
+The helper function `Slogger::new_bunyan_logger()` will setup the logger
+to output [bunyan-style](https://github.com/slog-rs/bunyan) JSON objects
+for each log message that looks like the following:
 
 ```
 {"msg":"Request","v":0,"name":"My App","level":30,"time":"2023-03-15T04:29:35.865466064Z","hostname":"my-computer","pid":810142,"method":"GET","path":"/","content-type":null,"user-agent":"vscode-restclient"}
@@ -76,13 +84,14 @@ The helper function `Slogger::new_bunyan_logger()` will setup the logger to outp
 {"msg":"Response","v":0,"name":"My App","level":30,"time":"2023-03-15T04:29:35.867971878Z","hostname":"my-computer","pid":810142,"method":"GET","path":"/","route":"always_greet","rank":-9,"code":200,"reason":"OK","content-type":"text/plain; charset=utf-8","size":11}
 ```
 
-Otherwise the `Slogger` fairing can be built with any [`slog`](https://github.com/slog-rs/slog)-compatible
-`Logger` with `Slogger::from_logger(logger)`.
+Otherwise the `Slogger` fairing can be built with any
+[`slog`](https://github.com/slog-rs/slog)-compatible `Logger`
+with `Slogger::from_logger(logger)`.
 
 ### Examples
 
-There are minimal implementations of a Rocket web server with this logging middleware attached
-in various configurations inside the `./examples` folder.
+There are minimal implementations of a Rocket web server with this logging
+middleware attached in various configurations inside the `./examples` folder.
 
 Keep in mind that some of the examples require features to be enabled.
 
@@ -91,13 +100,13 @@ For example, the command to run the `bunyan-callbacks-features` is
 
 ## Details
 
-For each request received, a log message is generated containing the following information:
+For each request received, a log message is generated containing the following:
 - HTTP Method (e.g. get, post, put, etc)
 - URL Path (e.g. /path/to/route?query=string)
 - Content-Type Header of Request
 - User Agent
 
-For each response sent, a log message is generated containing the following information:
+For each response sent, a log message is generated containing the following:
 - HTTP Method
 - URL Path
 - Content-Type Header of Response
@@ -106,29 +115,44 @@ For each response sent, a log message is generated containing the following info
 
 ### When the `transactions` feature is enabled
 
-For each request received, in addition to the above, the following information will also be generated:
-- Exact UTC date and time with time zone of when the middleware received the request.
-- A unique UUID that will be the same for all logs generated by a single request for corelating logs.
+For each request received, in addition to the above, the following information
+will also be generated:
+- Exact UTC date and time with time zone of when the request was received.
+- A unique UUID that will be the same for all logs generated by a single request
+  for correlating logs.
 
-For each response sent, in addition to the above, the following information will also be generated:
+For each response sent, in addition to the above, the following information
+will also be generated:
 - The same exact time of when the middleware initially received the request.
-- The same unique UUID that corelates the response log to the request log.
-- The total elapsed time from when the middleware received the request to when it received the response in nanoseconds.
+- The same unique UUID that correlates the response log to the request log.
+- The total elapsed time from when the middleware received the request to
+  when it received the response in nanoseconds.
+
+### When the `transaction_header` feature is enabled
+
+Calling `.with_request_id_header()` on the fairing sets an `X-Request-Id`
+response header to the same transaction UUID that appears in the logs. It is off
+by default, since a logging fairing should not alter responses unless asked.
+
+This lives behind its own feature so that enabling `transactions` for logging
+never compiles in any response-mutating code. The header reuses the transaction
+id, so `transaction_header` requires `transactions`.
 
 ### When the `local_time` feature is enabled
 
-The exact date and time with time zone of when the middleware received the request is shown
-in the systems local time zone.
+The exact date and time with time zone of when the middleware received the
+request is shown in the systems local time zone.
 
-Note however that the `time` field of when the log was made remains in the UTC time zone.
+Note that the `time` field of when the log was made remains in the UTC time zone.
 
 ### When the `callbacks` feature is enabled
 
 Functions can be attached to the fairing either on request or on response.
 
-These callback functions get access to the `slog::Logger` containing all of the above fields, as well as
-a reference to the response and/or request. This enables the callback functions to return the same or
-a new `slog::Logger` instance with any new properties added before the log message is generated.
+These callback functions get access to the `slog::Logger` containing all of
+the above fields, as well as a reference to the response and/or request.
+This enables the callback functions to return the same or a new `slog::Logger`
+instance with any new properties added before the log message is generated.
 
 ```rs
     Slogger::new_bunyan_logger(env!("CARGO_PKG_NAME"))
@@ -162,6 +186,8 @@ a new `slog::Logger` instance with any new properties added before the log messa
         })
 ```
 
-The `Box::pin( async move { ... } )` structure allows for calling `async` functions, such as executing a database query.
+The `Box::pin( async move { ... } )` structure allows for calling `async`
+functions, such as executing a database query.
 
-If you know of a cleaner or simpler way of providing `async` callback functions, the suggestions are very much welcome!
+If you know of a cleaner or simpler way of providing `async` callback functions,
+the suggestions are very much welcome!
