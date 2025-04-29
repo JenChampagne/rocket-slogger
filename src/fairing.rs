@@ -1,3 +1,4 @@
+use crate::filter::LogDecision;
 use crate::{info, Slogger};
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::{Build, Config, Data, Orbit, Request, Response, Rocket};
@@ -86,6 +87,15 @@ impl Fairing for Slogger {
             );
         }
 
+        if !self.filter_show.is_empty() || !self.filter_skip.is_empty() {
+            info!(
+                &self.logger,
+                "Request/Response Log Filtering Active";
+                "shown_routes" => self.filter_show.len(),
+                "skipped_routes" => self.filter_skip.len(),
+            );
+        }
+
         info!(
             &self.logger,
             "Accepting Connections";
@@ -96,6 +106,12 @@ impl Fairing for Slogger {
     }
 
     async fn on_request(&self, request: &mut Request<'_>, _: &mut Data<'_>) {
+        let should_log = self.filter_decision(request);
+        request.local_cache(|| LogDecision(should_log));
+        if !should_log {
+            return;
+        }
+
         #[allow(unused_mut)]
         let mut logger = Arc::new(self.get_for_request(request));
 
@@ -110,6 +126,11 @@ impl Fairing for Slogger {
     }
 
     async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
+        let should_log = request.local_cache(|| LogDecision(true)).0;
+        if !should_log {
+            return;
+        }
+
         #[allow(unused_mut)]
         let mut logger = Arc::new(self.get_for_response(request, response));
 
@@ -124,10 +145,9 @@ impl Fairing for Slogger {
 
         #[cfg(feature = "transaction_header")]
         if self.emit_request_id_header {
-            // `attach_on` returns the transaction already cached for this request
-            // during `on_request`, so the header carries the same id as the logs.
-            // It does not mint a new one here.
-            let transaction = crate::transaction::RequestTransaction::new().attach_on(request);
+            // The transaction was cached during `on_request`, so this reuses
+            // the same id the logs carry rather than minting a new one.
+            let transaction = crate::transaction::RequestTransaction::get_or_init(request);
             response.set_header(rocket::http::Header::new(
                 "X-Request-Id",
                 transaction.id_as_string(),

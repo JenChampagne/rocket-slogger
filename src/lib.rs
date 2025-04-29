@@ -1,4 +1,5 @@
 pub mod fairing;
+mod filter;
 pub mod from_request;
 
 #[cfg(feature = "transactions")]
@@ -11,8 +12,9 @@ pub use slog::{debug, trace};
 // logging macros that are kept in all builds
 pub use slog::{error, info, warn};
 
-use rocket::{Request, Response};
-use std::sync::Arc;
+use rocket::{Request, Response, Route};
+use std::sync::{Arc, OnceLock};
+use crate::filter::{ResolvedFilter, RouteKey};
 
 #[allow(unused_imports)]
 use std::future::Future;
@@ -22,6 +24,10 @@ use std::pin::Pin;
 #[derive(Clone)]
 pub struct Slogger {
     logger: Arc<Logger>,
+
+    filter_show: Vec<RouteKey>,
+    filter_skip: Vec<RouteKey>,
+    resolved: Arc<OnceLock<ResolvedFilter>>,
 
     #[cfg(feature = "transaction_header")]
     emit_request_id_header: bool,
@@ -105,6 +111,10 @@ impl Slogger {
         Self {
             logger: Arc::new(logger),
 
+            filter_show: vec![],
+            filter_skip: vec![],
+            resolved: Arc::new(OnceLock::new()),
+
             #[cfg(feature = "transaction_header")]
             emit_request_id_header: false,
 
@@ -136,7 +146,7 @@ impl Slogger {
 
         #[cfg(feature = "transactions")]
         let logger = {
-            let transaction = transaction::RequestTransaction::new().attach_on(request);
+            let transaction = transaction::RequestTransaction::get_or_init(request);
 
             self.logger.new(log_fields!(
                 "received" => transaction.received_as_string(),
@@ -163,7 +173,7 @@ impl Slogger {
 
         #[cfg(feature = "transactions")]
         let logger = {
-            let transaction = transaction::RequestTransaction::new().attach_on(request);
+            let transaction = transaction::RequestTransaction::get_or_init(request);
 
             self.logger.new(log_fields!(
                 "elapsed_ns" => transaction.elapsed_ns(),
@@ -195,13 +205,43 @@ impl Slogger {
         }
     }
 
+    /// Skip the automatic request/response logs for the given routes. Pass the
+    /// value produced by `rocket::routes![...]`. Combine with
+    /// `show_reqres_logs`: a skipped route wins over a shown one on overlap.
+    pub fn skip_reqres_logs(mut self, routes: Vec<Route>) -> Self {
+        self.filter_skip
+            .extend(routes.iter().map(RouteKey::from_route));
+        self
+    }
+
+    /// Show the automatic request/response logs only for the given routes.
+    /// Pass the value produced by `rocket::routes![...]`. When this is set,
+    /// routes not listed are not logged. Leaving it unset (the default)
+    /// logs every route.
+    pub fn show_reqres_logs(mut self, routes: Vec<Route>) -> Self {
+        self.filter_show
+            .extend(routes.iter().map(RouteKey::from_route));
+        self
+    }
+
     /// Set an `X-Request-Id` response header to the request's transaction id.
-    /// Off by default: a logging fairing should not alter responses unless asked.
-    /// Requires the `transaction_header` feature.
+    /// Off by default: a logging fairing should not alter responses unless
+    /// asked. Requires the `transaction_header` feature.
     #[cfg(feature = "transaction_header")]
     pub fn with_request_id_header(mut self) -> Self {
         self.emit_request_id_header = true;
         self
+    }
+
+    /// Decide whether this request should be logged. Resolves the listed routes
+    /// to mounted path patterns on first use, then matches by method and path.
+    pub(crate) fn filter_decision(&self, request: &Request<'_>) -> bool {
+        let resolved = self.resolved.get_or_init(|| {
+            let routes: Vec<&Route> = request.rocket().routes().collect();
+            ResolvedFilter::resolve(&routes, &self.filter_show, &self.filter_skip)
+        });
+
+        resolved.should_log(request.method(), request.uri().path().as_str())
     }
 
     #[cfg(feature = "callbacks")]
@@ -255,5 +295,53 @@ impl std::ops::Deref for Slogger {
 
     fn deref(&self) -> &Logger {
         &self.logger
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Slogger;
+    use rocket::{get, routes};
+
+    #[get("/skip")]
+    fn skip() -> &'static str {
+        "skip"
+    }
+
+    #[get("/keep")]
+    fn keep() -> &'static str {
+        "keep"
+    }
+
+    fn silent_slogger() -> Slogger {
+        let logger = super::Logger::root(slog::Discard, super::o!());
+        Slogger::from_logger(logger)
+    }
+
+    #[test]
+    fn test_skip_reqres_logs_stores_one_key() {
+        let slogger = silent_slogger().skip_reqres_logs(routes![skip]);
+        assert_eq!(
+            slogger.filter_skip.len(),
+            1,
+            "I expect one skipped route key"
+        );
+        assert_eq!(
+            slogger.filter_show.len(),
+            0,
+            "I expect no shown-route keys"
+        );
+    }
+
+    #[test]
+    fn test_show_reqres_logs_accumulates_keys() {
+        let slogger = silent_slogger()
+            .show_reqres_logs(routes![skip])
+            .show_reqres_logs(routes![keep]);
+        assert_eq!(
+            slogger.filter_show.len(),
+            2,
+            "I expect two accumulated shown-route keys"
+        );
     }
 }
