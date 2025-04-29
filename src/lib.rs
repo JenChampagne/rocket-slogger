@@ -12,14 +12,33 @@ pub use slog::{debug, trace};
 // logging macros that are kept in all builds
 pub use slog::{error, info, warn};
 
+use crate::filter::{ResolvedFilter, RouteKey};
 use rocket::{Request, Response, Route};
 use std::sync::{Arc, OnceLock};
-use crate::filter::{ResolvedFilter, RouteKey};
 
 #[allow(unused_imports)]
 use std::future::Future;
 #[allow(unused_imports)]
 use std::pin::Pin;
+
+/// The boxed future a callback handler returns: an optional replacement logger.
+#[cfg(feature = "callbacks")]
+type HandlerFuture<'r> = Pin<Box<dyn Future<Output = Option<Arc<Logger>>> + Send + 'r>>;
+
+/// A stored `on_request` callback. See [`Slogger::on_request`].
+#[cfg(feature = "callbacks")]
+type RequestHandler = Arc<
+    dyn for<'r> Fn(Arc<Logger>, &'r mut Request<'_>) -> HandlerFuture<'r> + Send + Sync + 'static,
+>;
+
+/// A stored `on_response` callback. See [`Slogger::on_response`].
+#[cfg(feature = "callbacks")]
+type ResponseHandler = Arc<
+    dyn for<'r> Fn(Arc<Logger>, &'r Request<'_>, &'r mut Response<'_>) -> HandlerFuture<'r>
+        + Send
+        + Sync
+        + 'static,
+>;
 
 #[derive(Clone)]
 pub struct Slogger {
@@ -33,33 +52,10 @@ pub struct Slogger {
     emit_request_id_header: bool,
 
     #[cfg(feature = "callbacks")]
-    request_handlers: Vec<
-        Arc<
-            dyn for<'r> Fn(
-                    Arc<Logger>,
-                    &'r mut Request<'_>,
-                )
-                    -> Pin<Box<dyn Future<Output = Option<Arc<Logger>>> + Send + 'r>>
-                + Send
-                + Sync
-                + 'static,
-        >,
-    >,
+    request_handlers: Vec<RequestHandler>,
 
     #[cfg(feature = "callbacks")]
-    response_handlers: Vec<
-        Arc<
-            dyn for<'r> Fn(
-                    Arc<Logger>,
-                    &'r Request<'_>,
-                    &'r mut Response<'_>,
-                )
-                    -> Pin<Box<dyn Future<Output = Option<Arc<Logger>>> + Send + 'r>>
-                + Send
-                + Sync
-                + 'static,
-        >,
-    >,
+    response_handlers: Vec<ResponseHandler>,
 }
 
 impl Slogger {
@@ -79,8 +75,9 @@ impl Slogger {
         use slog_term::{FullFormat, PlainSyncDecorator};
 
         let plain_logger = PlainSyncDecorator::new(std::io::stdout());
-        let env_logger = EnvLogger::new(plain_logger);
-        let logger = Logger::root(FullFormat::new(env_logger).build().fuse(), log_fields!());
+        let term_drain = FullFormat::new(plain_logger).build();
+        let env_logger = EnvLogger::new(term_drain);
+        let logger = Logger::root(env_logger.fuse(), log_fields!());
 
         Self::from_logger(logger)
     }
@@ -326,11 +323,7 @@ mod tests {
             1,
             "I expect one skipped route key"
         );
-        assert_eq!(
-            slogger.filter_show.len(),
-            0,
-            "I expect no shown-route keys"
-        );
+        assert_eq!(slogger.filter_show.len(), 0, "I expect no shown-route keys");
     }
 
     #[test]
@@ -343,5 +336,14 @@ mod tests {
             2,
             "I expect two accumulated shown-route keys"
         );
+    }
+
+    /// Regression guard: `new_terminal_logger` must compose its drain correctly
+    /// under every feature combination, including `terminal` + `envlogger`,
+    /// where the `EnvLogger` has to wrap the built terminal drain.
+    #[cfg(feature = "terminal")]
+    #[test]
+    fn test_new_terminal_logger_constructs() {
+        let _slogger = Slogger::new_terminal_logger();
     }
 }
