@@ -132,6 +132,47 @@ you pass to these methods is also mounted.
 
 See `cargo run --example filtering` for a working example.
 
+### Enriching the response log with request-scoped fields
+
+Any code path in a request can attach fields to the automatic `Response` log
+line through a request-scoped `ResponseLog`. Unrelated layers (an auth guard, a
+handler) write into the same per-request bag without coordinating, and the
+fairing merges everything onto the one `Response` line at the end. This needs no
+feature flag.
+
+Handlers take it as a request guard. Code that only has a `&Request`, like a
+`FromRequest` impl or an auth guard, reaches the same bag through the
+`SloggerExt` trait:
+
+```rs
+use rocket_slogger::{ResponseLog, SloggerExt};
+
+#[get("/users/<id>")]
+fn show_user(id: u64, log: ResponseLog) -> &'static str {
+    log.set("user_id", id);               // typed: remains as a number in JSON
+    log.set_some("tenant", None::<&str>); // skipped entirely when None
+    "ok"
+}
+
+// elsewhere, with only a &Request in hand:
+fn authenticate(request: &rocket::Request<'_>) {
+    request.response_log().set("role", "admin");
+}
+```
+
+`set` records a value, replacing any prior value for the same key. `set_some`
+records only when the value is `Some`, so an absent value leaves the field off
+the line rather than emitting a null. Values keep their type (numbers and
+booleans stay numbers and booleans in the output) instead of being stringified.
+
+Fields land on the `Response` line only. The `Request` line is emitted before
+routing, so it is already written by the time a handler or guard runs.
+
+`SloggerExt` also provides `request.logger()`, which always returns the
+request-enriched logger. Unlike the `Slogger` request guard it cannot miss: the
+fairing is managed from startup, so the only way it is absent is forgetting to
+attach the fairing.
+
 ## Details
 
 For each request received, a log message is generated containing the following:

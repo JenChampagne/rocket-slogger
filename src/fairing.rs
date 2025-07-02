@@ -1,7 +1,9 @@
 use crate::filter::LogDecision;
+use crate::response_log::ResponseLog;
 use crate::{info, Slogger};
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::{Build, Config, Data, Orbit, Request, Response, Rocket};
+use slog::Logger;
 use std::sync::Arc;
 
 #[inline]
@@ -153,6 +155,16 @@ impl Fairing for Slogger {
                 transaction.id_as_string(),
             ));
         }
+
+        // Merge any request-scoped fields that handlers or guards accumulated.
+        // Reads the same per-request `ResponseLog` instance they wrote to; an
+        // empty bag adds no logger layer.
+        let snapshot = request.local_cache(ResponseLog::default).snapshot();
+        let logger: Logger = if snapshot.is_empty() {
+            (*logger).clone()
+        } else {
+            logger.new(slog::OwnedKV(snapshot))
+        };
 
         info!(
             logger,

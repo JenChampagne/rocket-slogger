@@ -1,6 +1,9 @@
 pub mod fairing;
 mod filter;
 pub mod from_request;
+pub mod response_log;
+
+pub use response_log::{FieldValue, ResponseLog, SloggerExt};
 
 #[cfg(feature = "transactions")]
 pub mod transaction;
