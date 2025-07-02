@@ -1,3 +1,38 @@
+//! Structured logging middleware for the [Rocket](https://rocket.rs) web
+//! framework, built on [`slog`].
+//!
+//! Attaching the [`Slogger`] fairing logs every request and every response
+//! automatically. On liftoff it also emits the resolved configuration, the
+//! registered routes and catchers, and the address it is listening on, so a
+//! restart leaves a clear marker in the log stream. Inside a handler or guard
+//! the same logger is reachable for custom log lines, and the
+//! [`ResponseLog`] field bag lets any layer attach fields to the response
+//! line without threading state through the call graph.
+//!
+//! # Quick start
+//!
+//! Build any `slog` [`Logger`], wrap it in the fairing, and attach it. The
+//! fairing does not silence Rocket's own logger: set `config.log_level` to
+//! [`LogLevel::Off`](rocket::log::LogLevel) if you want only these logs.
+//!
+//! ```
+//! use rocket_slogger::{o, Drain, Logger, Slogger};
+//! use slog_term::{FullFormat, PlainSyncDecorator};
+//!
+//! let plain = PlainSyncDecorator::new(std::io::stdout());
+//! let logger = Logger::root(FullFormat::new(plain).build().fuse(), o!());
+//! let fairing = Slogger::from_logger(logger);
+//!
+//! let rocket = rocket::build().attach(fairing);
+//! # drop(rocket); // built, not launched, so the doctest stays a unit test
+//! ```
+//!
+//! The `terminal` and `bunyan` features provide
+//! [`Slogger::new_terminal_logger`] and [`Slogger::new_bunyan_logger`] so you
+//! can skip building the drain by hand. See the crate's feature table for the
+//! full set, including `transactions` (per-request id and timing) and
+//! `callbacks` ([`Slogger::on_request`] / [`Slogger::on_response`] hooks).
+
 pub mod fairing;
 mod filter;
 pub mod from_request;
@@ -43,6 +78,16 @@ type ResponseHandler = Arc<
         + 'static,
 >;
 
+/// The logging fairing, and the handle handlers and guards use to log.
+///
+/// Construct one from a `slog` [`Logger`] with [`from_logger`](Self::from_logger)
+/// (or the feature-gated [`new_terminal_logger`](Self::new_terminal_logger) /
+/// [`new_bunyan_logger`](Self::new_bunyan_logger) helpers), configure it with
+/// the builder methods, then `attach` it to Rocket. It is cheap to clone: every
+/// clone shares one root logger and one resolved route filter.
+///
+/// As a request guard it yields a request-enriched logger. For the always-present
+/// alternative that cannot miss, see [`SloggerExt::logger`].
 #[derive(Clone)]
 pub struct Slogger {
     logger: Arc<Logger>,
@@ -62,6 +107,9 @@ pub struct Slogger {
 }
 
 impl Slogger {
+    /// Build a fairing that writes plain-text lines to stdout. With the
+    /// `envlogger` feature also on, the terminal drain is wrapped so `RUST_LOG`
+    /// controls the level. Requires the `terminal` feature.
     #[cfg(all(feature = "terminal", not(feature = "envlogger")))]
     pub fn new_terminal_logger() -> Self {
         use slog_term::{FullFormat, PlainSyncDecorator};
@@ -72,6 +120,9 @@ impl Slogger {
         Self::from_logger(logger)
     }
 
+    /// Build a fairing that writes plain-text lines to stdout. With the
+    /// `envlogger` feature also on, the terminal drain is wrapped so `RUST_LOG`
+    /// controls the level. Requires the `terminal` feature.
     #[cfg(all(feature = "terminal", feature = "envlogger"))]
     pub fn new_terminal_logger() -> Self {
         use slog_envlogger::EnvLogger;
@@ -85,6 +136,9 @@ impl Slogger {
         Self::from_logger(logger)
     }
 
+    /// Build a fairing that writes bunyan-style JSON lines to stderr, tagged
+    /// with `name`. With the `envlogger` feature also on, the bunyan drain is
+    /// wrapped so `RUST_LOG` controls the level. Requires the `bunyan` feature.
     #[cfg(all(feature = "bunyan", not(feature = "envlogger")))]
     pub fn new_bunyan_logger(name: &'static str) -> Self {
         use std::sync::Mutex;
@@ -95,6 +149,9 @@ impl Slogger {
         Self::from_logger(logger)
     }
 
+    /// Build a fairing that writes bunyan-style JSON lines to stderr, tagged
+    /// with `name`. With the `envlogger` feature also on, the bunyan drain is
+    /// wrapped so `RUST_LOG` controls the level. Requires the `bunyan` feature.
     #[cfg(all(feature = "bunyan", feature = "envlogger"))]
     pub fn new_bunyan_logger(name: &'static str) -> Self {
         use slog_envlogger::EnvLogger;
@@ -107,6 +164,9 @@ impl Slogger {
         Self::from_logger(logger)
     }
 
+    /// Wrap an existing `slog` [`Logger`] in a fairing. This is the escape hatch
+    /// for any drain the feature helpers do not cover: build the `Logger` however
+    /// you like and hand it over.
     pub fn from_logger(logger: Logger) -> Self {
         Self {
             logger: Arc::new(logger),
@@ -126,10 +186,16 @@ impl Slogger {
         }
     }
 
+    /// The root logger, without any per-request fields. Use this for log lines
+    /// that are not tied to a single request, such as application startup.
     pub fn get(&self) -> &Logger {
         &self.logger
     }
 
+    /// A logger enriched with this request's details: method, path, matched
+    /// route, user agent, and content type, plus the transaction id and receive
+    /// time when the `transactions` feature is on. This is what the automatic
+    /// Request line and the [`SloggerExt::logger`] handle are built from.
     pub fn get_for_request(&self, request: &Request<'_>) -> Logger {
         let content_type = request.content_type().map(|format| format.to_string());
         let user_agent = request
@@ -160,6 +226,10 @@ impl Slogger {
         Self::new_logger_with_request_details(&logger, request)
     }
 
+    /// A logger enriched with the response's details: status code and reason,
+    /// content type, and the request fields again, plus the elapsed
+    /// request-to-response time when the `transactions` feature is on. This is
+    /// what the automatic Response line is built from.
     pub fn get_for_response(&self, request: &Request<'_>, response: &Response<'_>) -> Logger {
         let content_type = response.content_type().map(|format| format.to_string());
         let status = response.status();
@@ -244,6 +314,11 @@ impl Slogger {
         resolved.should_log(request.method(), request.uri().path().as_str())
     }
 
+    /// Register an async hook that runs before the automatic Request line is
+    /// written. The handler receives the request-enriched logger and the
+    /// request; return `Some(logger)` to replace the logger used for that line
+    /// (and seen by later hooks), or `None` to leave it unchanged. Hooks run in
+    /// registration order. Requires the `callbacks` feature.
     #[cfg(feature = "callbacks")]
     pub fn on_request(
         mut self,
@@ -260,6 +335,11 @@ impl Slogger {
         self
     }
 
+    /// Register an async hook that runs before the automatic Response line is
+    /// written. The handler receives the response-enriched logger, the request,
+    /// and the mutable response; return `Some(logger)` to replace the logger
+    /// used for that line, or `None` to leave it unchanged. Hooks run in
+    /// registration order. Requires the `callbacks` feature.
     #[cfg(feature = "callbacks")]
     pub fn on_response(
         mut self,

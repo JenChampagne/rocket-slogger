@@ -8,6 +8,10 @@ type TimeZone = chrono::Local;
 #[cfg(not(feature = "local_time"))]
 type TimeZone = chrono::Utc;
 
+/// A per-request identity and start time, cached on the request so every log
+/// line from one request shares the same id and the response line can report
+/// elapsed time. The timezone follows the `local_time` feature: system local
+/// when on, UTC otherwise.
 #[derive(Copy, Clone, Debug)]
 pub struct RequestTransaction {
     pub id: Uuid,
@@ -21,6 +25,9 @@ impl Default for RequestTransaction {
 }
 
 impl RequestTransaction {
+    /// Mint a fresh transaction: a new v4 UUID and the current time. Most callers
+    /// want [`get_or_init`](Self::get_or_init) instead, which reuses the one
+    /// already cached on the request.
     pub fn new() -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -28,6 +35,11 @@ impl RequestTransaction {
         }
     }
 
+    /// Cache this exact transaction on the request, or return the one already
+    /// cached if there is one. Because `local_cache` keeps the first value
+    /// stored, a pre-existing transaction wins and the `self` passed here is
+    /// dropped. To let the request lazily create its own, use
+    /// [`get_or_init`](Self::get_or_init).
     pub fn attach_on<'r>(self, request: &'r Request<'_>) -> &'r Self {
         request.local_cache(|| self)
     }
@@ -41,6 +53,7 @@ impl RequestTransaction {
         request.local_cache(Self::new)
     }
 
+    /// The transaction id as a lowercase hyphenated UUID string.
     pub fn id_as_string(&self) -> String {
         self.id
             .hyphenated()
@@ -48,14 +61,19 @@ impl RequestTransaction {
             .to_string()
     }
 
+    /// The receive time as an RFC 3339 timestamp.
     pub fn received_as_string(&self) -> String {
         self.received.to_rfc3339()
     }
 
+    /// Time since the request was received, as a `chrono::Duration` display
+    /// string (for example `PT0.5S`).
     pub fn elapsed_as_string(&self) -> String {
         (TimeZone::now() - self.received).to_string()
     }
 
+    /// Time since the request was received, in nanoseconds. `None` only if the
+    /// duration overflows an `i64`, which a single request cannot reach.
     pub fn elapsed_ns(&self) -> Option<i64> {
         (TimeZone::now() - self.received).num_nanoseconds()
     }

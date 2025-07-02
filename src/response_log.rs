@@ -99,6 +99,16 @@ impl_from_float!(f32, f64);
 ///
 /// Cloning is cheap: every handle shares one inner store, which is how a value
 /// set in an auth guard is visible to the fairing at response time.
+///
+/// ```
+/// use rocket_slogger::ResponseLog;
+///
+/// let log = ResponseLog::default();
+/// log.set("user_id", 42_u64); // typed: stays a number in the output
+/// log.set("plan", "pro"); // string field
+/// log.set_some("tenant", Some("acme")); // recorded, the value is present
+/// log.set_some("trial_days", None::<u64>); // skipped, field stays absent
+/// ```
 #[derive(Clone, Default)]
 pub struct ResponseLog {
     inner: Arc<Mutex<Vec<(&'static str, FieldValue)>>>,
@@ -172,6 +182,18 @@ impl slog::KV for ResponseLogSnapshot {
 /// Methods on `rocket::Request` for reaching the request's logger and field bag
 /// from any code path that holds a `&Request`. Bring it into scope with
 /// `use rocket_slogger::SloggerExt;`.
+///
+/// ```
+/// use rocket_slogger::{info, SloggerExt};
+/// use rocket::Request;
+///
+/// // Any layer holding a `&Request`, such as an auth guard, can both log and
+/// // attach a field to the eventual Response line.
+/// fn note_authenticated_user(request: &Request<'_>, user_id: &str) {
+///     info!(request.logger(), "authenticated");
+///     request.response_log().set("user_id", user_id);
+/// }
+/// ```
 pub trait SloggerExt {
     /// The request-enriched logger. In a running app this never fails: the
     /// fairing manages a `Slogger` from ignite onward, so the state is present

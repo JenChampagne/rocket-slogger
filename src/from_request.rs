@@ -3,6 +3,13 @@ use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome};
 use rocket::{Request, State};
 
+/// Inject a request-enriched [`Slogger`] into a handler as a request guard.
+///
+/// This can fail, unlike the [`ResponseLog`](crate::ResponseLog) guard which is
+/// `Infallible`. It resolves the managed `Slogger` from Rocket state, and a
+/// missing state value (the fairing was never attached) yields a `500`. The
+/// `ResponseLog` guard has no such dependency: it materializes from the
+/// request's local cache and so cannot miss.
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for Slogger {
     type Error = ();
