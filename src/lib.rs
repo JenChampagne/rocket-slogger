@@ -51,7 +51,7 @@ pub use slog::{debug, trace};
 pub use slog::{error, info, warn};
 
 use crate::filter::{ResolvedFilter, RouteKey};
-use rocket::{Request, Response, Route};
+use rocket::{Orbit, Request, Response, Rocket, Route};
 use std::sync::{Arc, OnceLock};
 
 #[allow(unused_imports)]
@@ -276,18 +276,25 @@ impl Slogger {
     }
 
     /// Skip the automatic request/response logs for the given routes. Pass the
-    /// value produced by `rocket::routes![...]`. Combine with
-    /// `show_reqres_logs`: a skipped route wins over a shown one on overlap.
+    /// value produced by `rocket::routes![...]`. Combine with `show_reqres_logs`:
+    /// a skipped route wins over a shown one on overlap.
+    ///
+    /// Matching is by path pattern and can be leaky: a route whose pattern
+    /// overlaps another's may be filtered for only some requests. Such routes
+    /// report `auto_log: conditional` on their `Route Registered` launch line.
     pub fn skip_reqres_logs(mut self, routes: Vec<Route>) -> Self {
         self.filter_skip
             .extend(routes.iter().map(RouteKey::from_route));
         self
     }
 
-    /// Show the automatic request/response logs only for the given routes.
-    /// Pass the value produced by `rocket::routes![...]`. When this is set,
-    /// routes not listed are not logged. Leaving it unset (the default)
-    /// logs every route.
+    /// Show the automatic request/response logs only for the given routes. Pass
+    /// the value produced by `rocket::routes![...]`. When this is set, routes not
+    /// listed are not logged. Leaving it unset (the default) logs every route.
+    ///
+    /// Matching is by path pattern and can be leaky: a route whose pattern
+    /// overlaps another's may be logged for only some requests. Such routes
+    /// report `auto_log: conditional` on their `Route Registered` launch line.
     pub fn show_reqres_logs(mut self, routes: Vec<Route>) -> Self {
         self.filter_show
             .extend(routes.iter().map(RouteKey::from_route));
@@ -303,15 +310,19 @@ impl Slogger {
         self
     }
 
-    /// Decide whether this request should be logged. Resolves the listed routes
-    /// to mounted path patterns on first use, then matches by method and path.
-    pub(crate) fn filter_decision(&self, request: &Request<'_>) -> bool {
-        let resolved = self.resolved.get_or_init(|| {
-            let routes: Vec<&Route> = request.rocket().routes().collect();
+    /// Resolve the listed routes to mounted path patterns on first use, caching
+    /// the result so launch-time reporting and per-request decisions agree.
+    pub(crate) fn resolved_filter(&self, rocket: &Rocket<Orbit>) -> &ResolvedFilter {
+        self.resolved.get_or_init(|| {
+            let routes: Vec<&Route> = rocket.routes().collect();
             ResolvedFilter::resolve(&routes, &self.filter_show, &self.filter_skip)
-        });
+        })
+    }
 
-        resolved.should_log(request.method(), request.uri().path().as_str())
+    /// Decide whether this request should be logged.
+    pub(crate) fn filter_decision(&self, request: &Request<'_>) -> bool {
+        self.resolved_filter(request.rocket())
+            .should_log(request.method(), request.uri().path().as_str())
     }
 
     /// Register an async hook that runs before the automatic Request line is

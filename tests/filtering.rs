@@ -1,13 +1,37 @@
 use rocket::local::blocking::Client;
 use rocket::{get, routes};
 use rocket_slogger::{o, Logger, Slogger};
+use slog::KV;
 use std::sync::{Arc, Mutex};
 
-/// A slog drain that records each log message's text, so a test can assert
-/// which automatic log lines were emitted.
+/// One captured log line: its message and its inline key/value fields.
+#[derive(Clone)]
+struct Captured {
+    msg: String,
+    fields: Vec<(String, String)>,
+}
+
+/// Collects a record's inline key/value pairs as strings.
+struct FieldCollector {
+    fields: Vec<(String, String)>,
+}
+
+impl slog::Serializer for FieldCollector {
+    fn emit_arguments(
+        &mut self,
+        key: slog::Key,
+        val: &std::fmt::Arguments,
+    ) -> slog::Result {
+        self.fields.push((key.to_string(), val.to_string()));
+        Ok(())
+    }
+}
+
+/// A slog drain that records each log line's message and inline fields, so a
+/// test can assert which automatic log lines were emitted and with what values.
 #[derive(Clone)]
 struct CaptureDrain {
-    messages: Arc<Mutex<Vec<String>>>,
+    records: Arc<Mutex<Vec<Captured>>>,
 }
 
 impl slog::Drain for CaptureDrain {
@@ -19,8 +43,13 @@ impl slog::Drain for CaptureDrain {
         record: &slog::Record,
         _values: &slog::OwnedKVList,
     ) -> Result<Self::Ok, Self::Err> {
-        if let Ok(mut messages) = self.messages.lock() {
-            messages.push(record.msg().to_string());
+        let mut collector = FieldCollector { fields: Vec::new() };
+        let _ = record.kv().serialize(record, &mut collector);
+        if let Ok(mut records) = self.records.lock() {
+            records.push(Captured {
+                msg: record.msg().to_string(),
+                fields: collector.fields,
+            });
         }
         Ok(())
     }
@@ -41,33 +70,68 @@ fn item(id: &str) -> String {
     format!("item {id}")
 }
 
-fn count(messages: &Arc<Mutex<Vec<String>>>, needle: &str) -> usize {
-    messages
+fn count(records: &Arc<Mutex<Vec<Captured>>>, needle: &str) -> usize {
+    records
         .lock()
-        .expect("I expect to lock the captured messages")
+        .expect("I expect to lock the captured records")
         .iter()
-        .filter(|message| message.as_str() == needle)
+        .filter(|record| record.msg.as_str() == needle)
         .count()
 }
 
-fn capture() -> (Slogger, Arc<Mutex<Vec<String>>>) {
-    let messages = Arc::new(Mutex::new(Vec::new()));
+fn capture() -> (Slogger, Arc<Mutex<Vec<Captured>>>) {
+    let records = Arc::new(Mutex::new(Vec::new()));
     let drain = CaptureDrain {
-        messages: messages.clone(),
+        records: records.clone(),
     };
     let logger = Logger::root(drain, o!());
-    (Slogger::from_logger(logger), messages)
+    (Slogger::from_logger(logger), records)
+}
+
+/// The value of `field` on the `Route Registered` line whose `path` matches.
+fn route_field(
+    records: &Arc<Mutex<Vec<Captured>>>,
+    path: &str,
+    field: &str,
+) -> Option<String> {
+    let records = records.lock().expect("I expect to lock the captured records");
+    records
+        .iter()
+        .filter(|record| record.msg == "Route Registered")
+        .find(|record| {
+            record
+                .fields
+                .iter()
+                .any(|(key, value)| key == "path" && value == path)
+        })
+        .and_then(|record| {
+            record
+                .fields
+                .iter()
+                .find(|(key, _)| key == field)
+                .map(|(_, value)| value.clone())
+        })
+}
+
+#[get("/users/<id>")]
+fn user(id: &str) -> String {
+    format!("user {id}")
+}
+
+#[get("/users/admin")]
+fn user_admin() -> &'static str {
+    "admin"
 }
 
 fn client_with(
     slogger_builder: impl FnOnce(Slogger) -> Slogger,
-) -> (Client, Arc<Mutex<Vec<String>>>) {
-    let (slogger, messages) = capture();
+) -> (Client, Arc<Mutex<Vec<Captured>>>) {
+    let (slogger, records) = capture();
     let rocket = rocket::build()
         .attach(slogger_builder(slogger))
-        .mount("/", routes![keep, skip]);
+        .mount("/", routes![keep, skip, user, user_admin]);
     let client = Client::tracked(rocket).expect("I expect a valid Rocket instance");
-    (client, messages)
+    (client, records)
 }
 
 #[test]
@@ -213,5 +277,36 @@ fn test_dynamic_route_filtered_by_handle() {
         count(&messages, "Request"),
         1,
         "I expect an unlisted route to still log"
+    );
+}
+
+#[test]
+fn test_route_registered_reports_auto_log() {
+    let (_client, records) = client_with(|slogger| slogger.skip_reqres_logs(routes![skip, user_admin]));
+
+    assert_eq!(
+        route_field(&records, "/keep", "auto_log").as_deref(),
+        Some("always"),
+        "I expect an unfiltered route to be always logged"
+    );
+    assert_eq!(
+        route_field(&records, "/skip", "auto_log").as_deref(),
+        Some("never"),
+        "I expect a skipped route to never log"
+    );
+    assert_eq!(
+        route_field(&records, "/users/admin", "auto_log").as_deref(),
+        Some("never"),
+        "I expect the fully-skipped static route to never log"
+    );
+    assert_eq!(
+        route_field(&records, "/users/<id>", "auto_log").as_deref(),
+        Some("conditional"),
+        "I expect the overlapping dynamic route to be conditional"
+    );
+    assert_eq!(
+        route_field(&records, "/users/<id>", "auto_log_overlaps").as_deref(),
+        Some("GET /users/admin"),
+        "I expect the conditional route to name the skipped pattern it overlaps"
     );
 }

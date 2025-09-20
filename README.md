@@ -122,8 +122,17 @@ and the route's path pattern (including dynamic `<segment>` and trailing
 the automatic request/response logs, not to loggers obtained through
 the request guard.
 
-When filtering is configured, a `Request/Response Log Filtering Active` line is
-logged at launch with the show/skip counts, so you can confirm it is wired up.
+At launch each `Route Registered` line carries an `auto_log` field — `always`,
+`never`, or `conditional` — so you can confirm exactly which routes are subject
+to request/response logging.
+
+Note: matching is by path *pattern*, and patterns can overlap. A request is
+filtered by which pattern it matches, not by which route ultimately handles it,
+so a route whose pattern overlaps a filtered one can be logged for some requests
+and skipped for others. Those routes report `auto_log: conditional` with an
+`auto_log_overlaps` field naming the patterns involved — for example, a shown
+`/users/<id>` overlaps a skipped `/users/admin`, so requests to `/users/admin`
+are skipped even though `/users/<id>` is shown.
 
 Note: the lists are resolved against the live route table. A route handle passed
 to `show_reqres_logs` that is never actually mounted resolves to nothing, which

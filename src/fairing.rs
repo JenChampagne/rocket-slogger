@@ -1,4 +1,4 @@
-use crate::filter::LogDecision;
+use crate::filter::{LogDecision, Segment};
 use crate::response_log::ResponseLog;
 use crate::{info, Slogger};
 use rocket::fairing::{Fairing, Info, Kind};
@@ -65,10 +65,14 @@ impl Fairing for Slogger {
             "profile" => %config.profile,
         );
 
+        let resolved = self.resolved_filter(rocket);
         for route in rocket.routes() {
+            let status = resolved.classify(route.method, &Segment::parse_path(route.uri.path()));
             info!(
                 &self.logger,
                 "Route Registered";
+                "auto_log_overlaps" => status.overlaps_field(),
+                "auto_log" => status.label(),
                 "rank" => route.rank,
                 "route" => route.name.as_ref().map(|route| route.to_string()),
                 "content-type" => route.format.as_ref().map(|format| format.to_string()),
@@ -86,15 +90,6 @@ impl Fairing for Slogger {
                 "code" => catcher.code,
                 "path" => %catcher.base,
                 "url" => format!("{}{}", url, catcher.base),
-            );
-        }
-
-        if !self.filter_show.is_empty() || !self.filter_skip.is_empty() {
-            info!(
-                &self.logger,
-                "Request/Response Log Filtering Active";
-                "shown_routes" => self.filter_show.len(),
-                "skipped_routes" => self.filter_skip.len(),
             );
         }
 

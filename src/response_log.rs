@@ -109,7 +109,7 @@ impl_from_float!(f32, f64);
 /// log.set_some("tenant", Some("acme")); // recorded, the value is present
 /// log.set_some("trial_days", None::<u64>); // skipped, field stays absent
 /// ```
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ResponseLog {
     inner: Arc<Mutex<Vec<(&'static str, FieldValue)>>>,
 }
