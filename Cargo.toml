@@ -32,6 +32,10 @@ path = "examples/terminal.rs"
 name = "terminal-feature"
 path = "examples/terminal-feature.rs"
 
+[[example]]
+name = "filtering"
+path = "examples/filtering.rs"
+
 [dependencies]
 rocket = "0.5"
 slog = "2.7"

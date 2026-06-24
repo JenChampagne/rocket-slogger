@@ -89,6 +89,31 @@ Keep in mind that some of the examples require features to be enabled.
 For example, the command to run the `bunyan-callbacks-features` is
 `cargo run --example bunyan-callbacks-features --features bunyan,callbacks`.
 
+### Filtering which routes are logged
+
+By default every request and response is logged. To exclude noisy routes (health
+checks, metrics) or to log only a chosen set, pass route handles to
+`skip_reqres_logs` or `show_reqres_logs`. Both take the value produced by
+`rocket::routes![...]`, so renaming or removing a handler is a compile error
+rather than a silent typo:
+
+```rs
+let fairing = Slogger::from_logger(logger)
+    // skip the request/response logs for these routes
+    .skip_reqres_logs(rocket::routes![health, metrics])
+    // and/or show those logs only for these routes
+    .show_reqres_logs(rocket::routes![api_v1, api_v2]);
+```
+
+When `show_reqres_logs` is set, only those routes are eligible; `skip_reqres_logs`
+then removes from the eligible set, so a skipped route wins on overlap. With
+neither set, everything is logged. Matching is by HTTP method and the route's path pattern
+(including dynamic `<segment>` and trailing `<segment..>` parts); query strings
+are ignored. Filtering applies only to the automatic request/response logs, not
+to loggers obtained through the request guard.
+
+See `cargo run --example filtering` for a working example.
+
 ## Details
 
 For each request received, a log message is generated containing the following information:

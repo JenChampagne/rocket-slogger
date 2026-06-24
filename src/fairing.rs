@@ -1,3 +1,4 @@
+use crate::filter::LogDecision;
 use crate::{info, Slogger};
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::{Build, Config, Data, Orbit, Request, Response, Rocket};
@@ -96,6 +97,12 @@ impl Fairing for Slogger {
     }
 
     async fn on_request(&self, request: &mut Request<'_>, _: &mut Data<'_>) {
+        let should_log = self.filter_decision(request);
+        request.local_cache(|| LogDecision(should_log));
+        if !should_log {
+            return;
+        }
+
         #[allow(unused_mut)]
         let mut logger = Arc::new(self.get_for_request(request));
 
@@ -110,6 +117,11 @@ impl Fairing for Slogger {
     }
 
     async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
+        let should_log = request.local_cache(|| LogDecision(true)).0;
+        if !should_log {
+            return;
+        }
+
         #[allow(unused_mut)]
         let mut logger = Arc::new(self.get_for_response(request, response));
 
