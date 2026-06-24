@@ -2,39 +2,52 @@ on:
   push:
   workflow_dispatch:
 
-name: Format, Lint, and Compile Rust Files
+name: Format, Lint, Test, and Compile Rust Files
 
 jobs:
   format:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - run: rustup component add rustfmt
-      - uses: actions-rs/cargo@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          command: fmt
-          args: --all -- --check
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features -- -D clippy::todo -D clippy::panic -D clippy::expect_used -D clippy::unwrap_used
-          name: Linting Results
+      - run: cargo clippy --all-features -- -D clippy::todo -D clippy::panic -D clippy::expect_used -D clippy::unwrap_used
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # The request/response tests assert on emitted info lines, so they cannot
+      # run under --all-features: that turns on max_level_off (logs compiled out)
+      # and envlogger (defaults to warn only), both of which suppress those lines.
+      # Run the info-enabled features together instead.
+      - name: Default features
+        run: cargo test
+      - name: All functional features
+        run: cargo test --features "transactions,transaction_header,local_time,callbacks,terminal,bunyan"
+      # Guard the terminal + envlogger drain composition without running the
+      # line-counting tests, which envlogger would suppress.
+      - name: Drain composition under envlogger
+        run: cargo test --features "terminal,envlogger" --lib test_new_terminal_logger_constructs
 
   compile:
     name: Compile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --release
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo check --release
