@@ -87,6 +87,15 @@ impl Fairing for Slogger {
             );
         }
 
+        if !self.filter_show.is_empty() || !self.filter_skip.is_empty() {
+            info!(
+                &self.logger,
+                "Request/Response Log Filtering Active";
+                "shown_routes" => self.filter_show.len(),
+                "skipped_routes" => self.filter_skip.len(),
+            );
+        }
+
         info!(
             &self.logger,
             "Accepting Connections";

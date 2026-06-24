@@ -112,6 +112,14 @@ neither set, everything is logged. Matching is by HTTP method and the route's pa
 are ignored. Filtering applies only to the automatic request/response logs, not
 to loggers obtained through the request guard.
 
+When filtering is configured, a `Request/Response Log Filtering Active` line is
+logged at launch with the show/skip counts, so you can confirm it is wired up.
+
+Note: the lists are resolved against the live route table. A route handle passed
+to `show_reqres_logs` that is never actually mounted resolves to nothing, which
+leaves the show list empty and therefore logs every route. Make sure any handle
+you pass to these methods is also mounted.
+
 See `cargo run --example filtering` for a working example.
 
 ## Details
