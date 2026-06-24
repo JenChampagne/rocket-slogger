@@ -122,6 +122,18 @@ impl Fairing for Slogger {
 
         let body_size = response.body_mut().size().await;
 
+        #[cfg(feature = "transaction_header")]
+        if self.emit_request_id_header {
+            // `attach_on` returns the transaction already cached for this request
+            // during `on_request`, so the header carries the same id as the logs.
+            // It does not mint a new one here.
+            let transaction = crate::transaction::RequestTransaction::new().attach_on(request);
+            response.set_header(rocket::http::Header::new(
+                "X-Request-Id",
+                transaction.id_as_string(),
+            ));
+        }
+
         info!(
             logger,
             "Response";

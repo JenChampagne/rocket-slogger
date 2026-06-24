@@ -4,6 +4,12 @@ pub mod from_request;
 #[cfg(feature = "transactions")]
 pub mod transaction;
 
+#[cfg(all(feature = "transaction_header", not(feature = "transactions")))]
+compile_error!(
+    "the `transaction_header` feature requires the `transactions` feature, \
+     which provides the id the header carries"
+);
+
 // various slog re-exports for convenience
 pub use slog::{o, o as log_fields, Drain, Logger};
 // logging macros that are compiled away in release mode
@@ -22,6 +28,9 @@ use std::pin::Pin;
 #[derive(Clone)]
 pub struct Slogger {
     logger: Arc<Logger>,
+
+    #[cfg(feature = "transaction_header")]
+    emit_request_id_header: bool,
 
     #[cfg(feature = "callbacks")]
     request_handlers: Vec<
@@ -101,6 +110,9 @@ impl Slogger {
     pub fn from_logger(logger: Logger) -> Self {
         Self {
             logger: Arc::new(logger),
+
+            #[cfg(feature = "transaction_header")]
+            emit_request_id_header: false,
 
             #[cfg(feature = "callbacks")]
             request_handlers: vec![],
@@ -187,6 +199,15 @@ impl Slogger {
                 "uri" => format!("{}", request.uri()),
             ))
         }
+    }
+
+    /// Set an `X-Request-Id` response header to the request's transaction id.
+    /// Off by default: a logging fairing should not alter responses unless asked.
+    /// Requires the `transaction_header` feature.
+    #[cfg(feature = "transaction_header")]
+    pub fn with_request_id_header(mut self) -> Self {
+        self.emit_request_id_header = true;
+        self
     }
 
     #[cfg(feature = "callbacks")]

@@ -115,6 +115,17 @@ For each response sent, in addition to the above, the following information will
 - The same unique UUID that corelates the response log to the request log.
 - The total elapsed time from when the middleware received the request to when it received the response in nanoseconds.
 
+### When the `transaction_header` feature is enabled
+
+Calling `.with_request_id_header()` on the fairing sets an `X-Request-Id`
+response header to the same transaction UUID that appears in the logs. It is off
+by default, since a logging fairing should not alter responses unless asked.
+
+This lives behind its own feature so that enabling `transactions` for logging
+never compiles in any response-mutating code. The header reuses the transaction
+id, so `transaction_header` requires `transactions`. Enabling it without
+`transactions` is a compile error rather than a silent no-op.
+
 ### When the `local_time` feature is enabled
 
 The exact date and time with time zone of when the middleware received the request is shown
