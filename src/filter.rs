@@ -7,14 +7,14 @@ use rocket::Route;
 /// after mounting. This is what lets us correlate a listed route to its live,
 /// mounted entry without the developer repeating the mount base.
 #[derive(Clone, Debug, PartialEq)]
-pub struct RouteKey {
-    pub method: Method,
-    pub name: Option<String>,
-    pub unmounted: String,
+pub(crate) struct RouteKey {
+    pub(crate) method: Method,
+    pub(crate) name: Option<String>,
+    pub(crate) unmounted: String,
 }
 
 impl RouteKey {
-    pub fn from_route(route: &Route) -> Self {
+    pub(crate) fn from_route(route: &Route) -> Self {
         Self {
             method: route.method,
             name: route.name.as_ref().map(|name| name.to_string()),
@@ -25,7 +25,7 @@ impl RouteKey {
 
 /// One segment of a route path pattern.
 #[derive(Clone, Debug, PartialEq)]
-pub enum Segment {
+pub(crate) enum Segment {
     /// A literal segment that must equal the request segment.
     Static(String),
     /// `<name>`: matches exactly one request segment.
@@ -37,7 +37,7 @@ pub enum Segment {
 impl Segment {
     /// Parse a route path like `/users/<id>` or `/files/<rest..>` into segments.
     /// Empty segments (leading/trailing/double slashes) are dropped.
-    pub fn parse_path(path: &str) -> Vec<Segment> {
+    pub(crate) fn parse_path(path: &str) -> Vec<Segment> {
         path.split('/')
             .filter(|segment| !segment.is_empty())
             .map(|segment| {
@@ -57,7 +57,7 @@ impl Segment {
 /// are ignored. This is a single-pattern matcher only: no ranking, no collision
 /// detection, no format negotiation. It is not a reimplementation of Rocket's
 /// router.
-pub fn path_matches(pattern: &[Segment], path: &str) -> bool {
+pub(crate) fn path_matches(pattern: &[Segment], path: &str) -> bool {
     let request: Vec<&str> = path
         .split('/')
         .filter(|segment| !segment.is_empty())
@@ -87,13 +87,13 @@ pub fn path_matches(pattern: &[Segment], path: &str) -> bool {
 
 /// The allow/deny lists resolved to concrete mounted path patterns. Built once
 /// from the live route table.
-pub struct ResolvedFilter {
-    pub allow: Vec<(Method, Vec<Segment>)>,
-    pub deny: Vec<(Method, Vec<Segment>)>,
+pub(crate) struct ResolvedFilter {
+    pub(crate) allow: Vec<(Method, Vec<Segment>)>,
+    pub(crate) deny: Vec<(Method, Vec<Segment>)>,
 }
 
 impl ResolvedFilter {
-    pub fn resolve(routes: &[&Route], allow_keys: &[RouteKey], deny_keys: &[RouteKey]) -> Self {
+    pub(crate) fn resolve(routes: &[&Route], allow_keys: &[RouteKey], deny_keys: &[RouteKey]) -> Self {
         fn collect(routes: &[&Route], keys: &[RouteKey]) -> Vec<(Method, Vec<Segment>)> {
             routes
                 .iter()
@@ -112,7 +112,7 @@ impl ResolvedFilter {
     }
 
     /// Allow gates, deny subtracts. Empty allow means "everything is eligible".
-    pub fn should_log(&self, method: Method, path: &str) -> bool {
+    pub(crate) fn should_log(&self, method: Method, path: &str) -> bool {
         let matches_in = |set: &[(Method, Vec<Segment>)]| {
             set.iter().any(|(route_method, pattern)| {
                 *route_method == method && path_matches(pattern, path)
@@ -127,7 +127,7 @@ impl ResolvedFilter {
 /// Cached per-request log decision, stored in `request.local_cache()` so that
 /// `on_request` and `on_response` always agree.
 #[derive(Clone, Copy)]
-pub struct LogDecision(pub bool);
+pub(crate) struct LogDecision(pub(crate) bool);
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,5 @@
 pub mod fairing;
-pub mod filter;
+mod filter;
 pub mod from_request;
 
 #[cfg(feature = "transactions")]
