@@ -22,3 +22,16 @@ wrapped for production throughput.
 
 Consumers can already supply their own async drain via `from_logger`; this is
 about making the batteries-included path non-blocking too.
+
+## Revisit callbacks ergonomics if AsyncFn gains Send return-type notation
+
+The `callbacks` handlers require callers to return `Pin<Box<dyn Future + Send>>`
+by hand. A generic `AsyncFn` bound would let callers write a plain async block,
+but the call has to run inside Rocket's `Send` fairing future, and on stable
+there is no way to require an `AsyncFn`'s returned future to be `Send`: the
+`CallRefFuture: Send` bound needs return-type notation, which is nightly-only.
+
+When return-type notation stabilizes, an additive `on_request_async` /
+`on_response_async` pair taking `AsyncFn` closures (gated on the compiler
+version with `rustversion`, so the MSRV does not move) would remove the manual
+boxing without a breaking change.
