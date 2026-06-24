@@ -86,8 +86,9 @@ impl Slogger {
         use slog_term::{FullFormat, PlainSyncDecorator};
 
         let plain_logger = PlainSyncDecorator::new(std::io::stdout());
-        let env_logger = EnvLogger::new(plain_logger);
-        let logger = Logger::root(FullFormat::new(env_logger).build().fuse(), log_fields!());
+        let term_drain = FullFormat::new(plain_logger).build();
+        let env_logger = EnvLogger::new(term_drain);
+        let logger = Logger::root(env_logger.fuse(), log_fields!());
 
         Self::from_logger(logger)
     }
@@ -349,5 +350,14 @@ mod tests {
             2,
             "I expect two accumulated shown-route keys"
         );
+    }
+
+    /// Regression guard: `new_terminal_logger` must compose its drain correctly
+    /// under every feature combination, including `terminal` + `envlogger`,
+    /// where the `EnvLogger` has to wrap the built terminal drain.
+    #[cfg(feature = "terminal")]
+    #[test]
+    fn test_new_terminal_logger_constructs() {
+        let _slogger = Slogger::new_terminal_logger();
     }
 }
