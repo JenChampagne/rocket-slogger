@@ -32,6 +32,14 @@ impl RequestTransaction {
         request.local_cache(|| self)
     }
 
+    /// Return the transaction cached on this request, creating one only if none
+    /// exists yet. Unlike `attach_on`, the id and timestamp are constructed lazily
+    /// inside `local_cache`, so a request that already has a transaction does not
+    /// pay for a throwaway `Uuid::new_v4()` and clock read on every later lookup.
+    pub fn get_or_init<'r>(request: &'r Request<'_>) -> &'r Self {
+        request.local_cache(Self::new)
+    }
+
     pub fn id_as_string(&self) -> String {
         self.id
             .hyphenated()
