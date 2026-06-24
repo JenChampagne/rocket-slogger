@@ -32,8 +32,8 @@ use std::pin::Pin;
 pub struct Slogger {
     logger: Arc<Logger>,
 
-    filter_allow: Vec<RouteKey>,
-    filter_deny: Vec<RouteKey>,
+    filter_show: Vec<RouteKey>,
+    filter_skip: Vec<RouteKey>,
     resolved: Arc<OnceLock<ResolvedFilter>>,
 
     #[cfg(feature = "transaction_header")]
@@ -119,8 +119,8 @@ impl Slogger {
         Self {
             logger: Arc::new(logger),
 
-            filter_allow: vec![],
-            filter_deny: vec![],
+            filter_show: vec![],
+            filter_skip: vec![],
             resolved: Arc::new(OnceLock::new()),
 
             #[cfg(feature = "transaction_header")]
@@ -217,7 +217,7 @@ impl Slogger {
     /// value produced by `rocket::routes![...]`. Combine with `show_reqres_logs`:
     /// a skipped route wins over a shown one on overlap.
     pub fn skip_reqres_logs(mut self, routes: Vec<Route>) -> Self {
-        self.filter_deny
+        self.filter_skip
             .extend(routes.iter().map(RouteKey::from_route));
         self
     }
@@ -226,7 +226,7 @@ impl Slogger {
     /// the value produced by `rocket::routes![...]`. When this is set, routes not
     /// listed are not logged. Leaving it unset (the default) logs every route.
     pub fn show_reqres_logs(mut self, routes: Vec<Route>) -> Self {
-        self.filter_allow
+        self.filter_show
             .extend(routes.iter().map(RouteKey::from_route));
         self
     }
@@ -245,7 +245,7 @@ impl Slogger {
     pub(crate) fn filter_decision(&self, request: &Request<'_>) -> bool {
         let resolved = self.resolved.get_or_init(|| {
             let routes: Vec<&Route> = request.rocket().routes().collect();
-            ResolvedFilter::resolve(&routes, &self.filter_allow, &self.filter_deny)
+            ResolvedFilter::resolve(&routes, &self.filter_show, &self.filter_skip)
         });
 
         resolved.should_log(request.method(), request.uri().path().as_str())
@@ -329,12 +329,12 @@ mod tests {
     fn test_skip_reqres_logs_stores_one_key() {
         let slogger = silent_slogger().skip_reqres_logs(routes![skip]);
         assert_eq!(
-            slogger.filter_deny.len(),
+            slogger.filter_skip.len(),
             1,
             "I expect one skipped route key"
         );
         assert_eq!(
-            slogger.filter_allow.len(),
+            slogger.filter_show.len(),
             0,
             "I expect no shown-route keys"
         );
@@ -346,7 +346,7 @@ mod tests {
             .show_reqres_logs(routes![skip])
             .show_reqres_logs(routes![keep]);
         assert_eq!(
-            slogger.filter_allow.len(),
+            slogger.filter_show.len(),
             2,
             "I expect two accumulated shown-route keys"
         );

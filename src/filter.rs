@@ -85,15 +85,15 @@ pub(crate) fn path_matches(pattern: &[Segment], path: &str) -> bool {
     index == request.len()
 }
 
-/// The allow/deny lists resolved to concrete mounted path patterns. Built once
+/// The show/skip lists resolved to concrete mounted path patterns. Built once
 /// from the live route table.
 pub(crate) struct ResolvedFilter {
-    pub(crate) allow: Vec<(Method, Vec<Segment>)>,
-    pub(crate) deny: Vec<(Method, Vec<Segment>)>,
+    pub(crate) shown: Vec<(Method, Vec<Segment>)>,
+    pub(crate) skipped: Vec<(Method, Vec<Segment>)>,
 }
 
 impl ResolvedFilter {
-    pub(crate) fn resolve(routes: &[&Route], allow_keys: &[RouteKey], deny_keys: &[RouteKey]) -> Self {
+    pub(crate) fn resolve(routes: &[&Route], show_keys: &[RouteKey], skip_keys: &[RouteKey]) -> Self {
         fn collect(routes: &[&Route], keys: &[RouteKey]) -> Vec<(Method, Vec<Segment>)> {
             routes
                 .iter()
@@ -106,12 +106,13 @@ impl ResolvedFilter {
         }
 
         Self {
-            allow: collect(routes, allow_keys),
-            deny: collect(routes, deny_keys),
+            shown: collect(routes, show_keys),
+            skipped: collect(routes, skip_keys),
         }
     }
 
-    /// Allow gates, deny subtracts. Empty allow means "everything is eligible".
+    /// The show list gates, the skip list subtracts. An empty show list means
+    /// "everything is eligible".
     pub(crate) fn should_log(&self, method: Method, path: &str) -> bool {
         let matches_in = |set: &[(Method, Vec<Segment>)]| {
             set.iter().any(|(route_method, pattern)| {
@@ -119,8 +120,8 @@ impl ResolvedFilter {
             })
         };
 
-        let eligible = self.allow.is_empty() || matches_in(&self.allow);
-        eligible && !matches_in(&self.deny)
+        let eligible = self.shown.is_empty() || matches_in(&self.shown);
+        eligible && !matches_in(&self.skipped)
     }
 }
 
@@ -212,8 +213,8 @@ mod tests {
     #[test]
     fn test_decision_truth_table() {
         let only_deny = ResolvedFilter {
-            allow: vec![],
-            deny: vec![(Method::Get, pat("/health"))],
+            shown: vec![],
+            skipped: vec![(Method::Get, pat("/health"))],
         };
         assert!(
             only_deny.should_log(Method::Get, "/keep"),
@@ -229,8 +230,8 @@ mod tests {
         );
 
         let only_allow = ResolvedFilter {
-            allow: vec![(Method::Get, pat("/api"))],
-            deny: vec![],
+            shown: vec![(Method::Get, pat("/api"))],
+            skipped: vec![],
         };
         assert!(
             only_allow.should_log(Method::Get, "/api"),
@@ -242,8 +243,8 @@ mod tests {
         );
 
         let both = ResolvedFilter {
-            allow: vec![(Method::Get, pat("/api")), (Method::Get, pat("/admin"))],
-            deny: vec![(Method::Get, pat("/admin"))],
+            shown: vec![(Method::Get, pat("/api")), (Method::Get, pat("/admin"))],
+            skipped: vec![(Method::Get, pat("/admin"))],
         };
         assert!(
             both.should_log(Method::Get, "/api"),
@@ -255,8 +256,8 @@ mod tests {
         );
 
         let neither = ResolvedFilter {
-            allow: vec![],
-            deny: vec![],
+            shown: vec![],
+            skipped: vec![],
         };
         assert!(
             neither.should_log(Method::Get, "/anything"),
