@@ -36,6 +36,11 @@ fn skip() -> &'static str {
     "skip"
 }
 
+#[get("/item/<id>")]
+fn item(id: &str) -> String {
+    format!("item {id}")
+}
+
 fn count(messages: &Arc<Mutex<Vec<String>>>, needle: &str) -> usize {
     messages
         .lock()
@@ -45,18 +50,21 @@ fn count(messages: &Arc<Mutex<Vec<String>>>, needle: &str) -> usize {
         .count()
 }
 
-fn client_with(
-    slogger_builder: impl FnOnce(Slogger) -> Slogger,
-) -> (Client, Arc<Mutex<Vec<String>>>) {
+fn capture() -> (Slogger, Arc<Mutex<Vec<String>>>) {
     let messages = Arc::new(Mutex::new(Vec::new()));
     let drain = CaptureDrain {
         messages: messages.clone(),
     };
     let logger = Logger::root(drain, o!());
-    let slogger = slogger_builder(Slogger::from_logger(logger));
+    (Slogger::from_logger(logger), messages)
+}
 
+fn client_with(
+    slogger_builder: impl FnOnce(Slogger) -> Slogger,
+) -> (Client, Arc<Mutex<Vec<String>>>) {
+    let (slogger, messages) = capture();
     let rocket = rocket::build()
-        .attach(slogger)
+        .attach(slogger_builder(slogger))
         .mount("/", routes![keep, skip]);
     let client = Client::tracked(rocket).expect("I expect a valid Rocket instance");
     (client, messages)
@@ -130,5 +138,80 @@ fn test_no_lists_logs_everything() {
         count(&messages, "Response"),
         2,
         "I expect both routes to log a Response line"
+    );
+}
+
+#[test]
+fn test_filter_resolves_under_nonroot_mount() {
+    // The whole point of resolving by route handle is that it survives mounting
+    // at any base. Mount at /api and confirm the skip still lands.
+    let (slogger, messages) = capture();
+    let rocket = rocket::build()
+        .attach(slogger.skip_reqres_logs(routes![skip]))
+        .mount("/api", routes![keep, skip]);
+    let client = Client::tracked(rocket).expect("I expect a valid Rocket instance");
+
+    client.get("/api/skip").dispatch();
+    assert_eq!(
+        count(&messages, "Request"),
+        0,
+        "I expect a skipped route to stay skipped when mounted at a non-root base"
+    );
+
+    client.get("/api/keep").dispatch();
+    assert_eq!(
+        count(&messages, "Request"),
+        1,
+        "I expect a non-skipped route to log when mounted at a non-root base"
+    );
+}
+
+#[test]
+fn test_show_and_skip_combined_deny_wins() {
+    let (slogger, messages) = capture();
+    let rocket = rocket::build()
+        .attach(
+            slogger
+                .show_reqres_logs(routes![keep, skip])
+                .skip_reqres_logs(routes![skip]),
+        )
+        .mount("/", routes![keep, skip]);
+    let client = Client::tracked(rocket).expect("I expect a valid Rocket instance");
+
+    client.get("/skip").dispatch();
+    assert_eq!(
+        count(&messages, "Request"),
+        0,
+        "I expect skip to win over show when a route is on both lists"
+    );
+
+    client.get("/keep").dispatch();
+    assert_eq!(
+        count(&messages, "Request"),
+        1,
+        "I expect a shown, non-skipped route to log"
+    );
+}
+
+#[test]
+fn test_dynamic_route_filtered_by_handle() {
+    let (slogger, messages) = capture();
+    let rocket = rocket::build()
+        .attach(slogger.skip_reqres_logs(routes![item]))
+        .mount("/", routes![item, keep]);
+    let client = Client::tracked(rocket).expect("I expect a valid Rocket instance");
+
+    client.get("/item/42").dispatch();
+    assert_eq!(
+        count(&messages, "Request"),
+        0,
+        "I expect a dynamic route skipped by handle to produce no lines"
+    );
+
+    client.get("/keep").dispatch();
+    assert_eq!(
+        count(&messages, "Request"),
+        1,
+        "I expect an unlisted route to still log"
     );
 }
