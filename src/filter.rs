@@ -93,7 +93,11 @@ pub(crate) struct ResolvedFilter {
 }
 
 impl ResolvedFilter {
-    pub(crate) fn resolve(routes: &[&Route], show_keys: &[RouteKey], skip_keys: &[RouteKey]) -> Self {
+    pub(crate) fn resolve(
+        routes: &[&Route],
+        show_keys: &[RouteKey],
+        skip_keys: &[RouteKey],
+    ) -> Self {
         fn collect(routes: &[&Route], keys: &[RouteKey]) -> Vec<(Method, Vec<Segment>)> {
             routes
                 .iter()

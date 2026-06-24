@@ -113,10 +113,7 @@ fn test_header_absent_on_denied_route() {
 #[test]
 fn test_header_matches_logged_transaction_id() {
     let ids = Arc::new(Mutex::new(Vec::new()));
-    let logger = Logger::root(
-        TransactionCaptureDrain { ids: ids.clone() },
-        o!(),
-    );
+    let logger = Logger::root(TransactionCaptureDrain { ids: ids.clone() }, o!());
     let client = client_with(Slogger::from_logger(logger).with_request_id_header());
 
     let response = client.get("/keep").dispatch();

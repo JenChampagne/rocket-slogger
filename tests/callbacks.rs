@@ -160,7 +160,10 @@ fn test_handlers_run_in_registration_order() {
         .on_request(move |logger, _request| {
             let second = second.clone();
             Box::pin(async move {
-                second.lock().expect("I expect to lock order").push("second");
+                second
+                    .lock()
+                    .expect("I expect to lock order")
+                    .push("second");
                 Some(logger)
             })
         });

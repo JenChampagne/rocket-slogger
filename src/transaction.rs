@@ -69,8 +69,7 @@ mod tests {
     fn test_id_as_string_round_trips_to_the_same_uuid() {
         let transaction = RequestTransaction::new();
         let rendered = transaction.id_as_string();
-        let parsed =
-            Uuid::parse_str(&rendered).expect("I expect the id string to be a valid UUID");
+        let parsed = Uuid::parse_str(&rendered).expect("I expect the id string to be a valid UUID");
         assert_eq!(
             parsed, transaction.id,
             "I expect the rendered id to parse back to the original UUID"

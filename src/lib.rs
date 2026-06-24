@@ -333,11 +333,7 @@ mod tests {
             1,
             "I expect one skipped route key"
         );
-        assert_eq!(
-            slogger.filter_show.len(),
-            0,
-            "I expect no shown-route keys"
-        );
+        assert_eq!(slogger.filter_show.len(), 0, "I expect no shown-route keys");
     }
 
     #[test]
