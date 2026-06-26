@@ -17,11 +17,7 @@ struct FieldCollector {
 }
 
 impl slog::Serializer for FieldCollector {
-    fn emit_arguments(
-        &mut self,
-        key: slog::Key,
-        val: &std::fmt::Arguments,
-    ) -> slog::Result {
+    fn emit_arguments(&mut self, key: slog::Key, val: &std::fmt::Arguments) -> slog::Result {
         self.fields.push((key.to_string(), val.to_string()));
         Ok(())
     }
@@ -89,12 +85,10 @@ fn capture() -> (Slogger, Arc<Mutex<Vec<Captured>>>) {
 }
 
 /// The value of `field` on the `Route Registered` line whose `path` matches.
-fn route_field(
-    records: &Arc<Mutex<Vec<Captured>>>,
-    path: &str,
-    field: &str,
-) -> Option<String> {
-    let records = records.lock().expect("I expect to lock the captured records");
+fn route_field(records: &Arc<Mutex<Vec<Captured>>>, path: &str, field: &str) -> Option<String> {
+    let records = records
+        .lock()
+        .expect("I expect to lock the captured records");
     records
         .iter()
         .filter(|record| record.msg == "Route Registered")
@@ -282,7 +276,8 @@ fn test_dynamic_route_filtered_by_handle() {
 
 #[test]
 fn test_route_registered_reports_auto_log() {
-    let (_client, records) = client_with(|slogger| slogger.skip_reqres_logs(routes![skip, user_admin]));
+    let (_client, records) =
+        client_with(|slogger| slogger.skip_reqres_logs(routes![skip, user_admin]));
 
     assert_eq!(
         route_field(&records, "/keep", "auto_log").as_deref(),

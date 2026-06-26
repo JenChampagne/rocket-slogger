@@ -109,7 +109,11 @@ pub(crate) fn coverage(filter: &[Segment], route: &[Segment]) -> Coverage {
         match filter_segment {
             // A trailing filter segment swallows everything left.
             Segment::Trailing => {
-                return if partial { Coverage::Partial } else { Coverage::Full };
+                return if partial {
+                    Coverage::Partial
+                } else {
+                    Coverage::Full
+                };
             }
             Segment::Dynamic => {
                 if index >= route.len() {
@@ -143,7 +147,11 @@ pub(crate) fn coverage(filter: &[Segment], route: &[Segment]) -> Coverage {
     }
 
     if index == route.len() {
-        return if partial { Coverage::Partial } else { Coverage::Full };
+        return if partial {
+            Coverage::Partial
+        } else {
+            Coverage::Full
+        };
     }
 
     // Filter consumed but route has leftovers. A lone trailing leftover can
@@ -239,9 +247,8 @@ impl ResolvedFilter {
     /// "everything is eligible".
     pub(crate) fn should_log(&self, method: Method, path: &str) -> bool {
         let matches_in = |set: &[FilterPattern]| {
-            set.iter().any(|pattern| {
-                pattern.method == method && path_matches(&pattern.segments, path)
-            })
+            set.iter()
+                .any(|pattern| pattern.method == method && path_matches(&pattern.segments, path))
         };
 
         let eligible = self.shown.is_empty() || matches_in(&self.shown);
@@ -469,15 +476,30 @@ mod tests {
         // disjoint statics -> no overlap
         assert_eq!(coverage(&pat("/health"), &pat("/metrics")), Coverage::None);
         // filter dynamic matches a route static -> full
-        assert_eq!(coverage(&pat("/users/<id>"), &pat("/users/<id>")), Coverage::Full);
+        assert_eq!(
+            coverage(&pat("/users/<id>"), &pat("/users/<id>")),
+            Coverage::Full
+        );
         // route dynamic vs filter static -> only one value caught -> partial
-        assert_eq!(coverage(&pat("/users/admin"), &pat("/users/<id>")), Coverage::Partial);
+        assert_eq!(
+            coverage(&pat("/users/admin"), &pat("/users/<id>")),
+            Coverage::Partial
+        );
         // filter trailing covers the rest -> full
-        assert_eq!(coverage(&pat("/files/<rest..>"), &pat("/files/a/b")), Coverage::Full);
+        assert_eq!(
+            coverage(&pat("/files/<rest..>"), &pat("/files/a/b")),
+            Coverage::Full
+        );
         // route trailing vs shorter static filter -> request-dependent -> partial
-        assert_eq!(coverage(&pat("/files"), &pat("/files/<rest..>")), Coverage::Partial);
+        assert_eq!(
+            coverage(&pat("/files"), &pat("/files/<rest..>")),
+            Coverage::Partial
+        );
         // route longer than a non-trailing filter -> no match
-        assert_eq!(coverage(&pat("/files"), &pat("/files/logs")), Coverage::None);
+        assert_eq!(
+            coverage(&pat("/files"), &pat("/files/logs")),
+            Coverage::None
+        );
     }
 
     #[test]
@@ -485,7 +507,10 @@ mod tests {
         use super::AutoLog;
 
         // No filter at all -> always logged.
-        let none = ResolvedFilter { shown: vec![], skipped: vec![] };
+        let none = ResolvedFilter {
+            shown: vec![],
+            skipped: vec![],
+        };
         assert_eq!(none.classify(Method::Get, &pat("/keep")), AutoLog::Always);
 
         // Fully skipped -> never.
@@ -493,7 +518,10 @@ mod tests {
             shown: vec![],
             skipped: vec![fp(Method::Get, "/users/admin")],
         };
-        assert_eq!(skip.classify(Method::Get, &pat("/users/admin")), AutoLog::Never);
+        assert_eq!(
+            skip.classify(Method::Get, &pat("/users/admin")),
+            AutoLog::Never
+        );
 
         // Outside a non-empty show list -> never.
         let show = ResolvedFilter {
@@ -510,7 +538,9 @@ mod tests {
         };
         assert_eq!(
             overlap.classify(Method::Get, &pat("/users/<id>")),
-            AutoLog::Conditional { overlaps: vec!["GET /users/admin".to_string()] },
+            AutoLog::Conditional {
+                overlaps: vec!["GET /users/admin".to_string()]
+            },
         );
 
         // Trailing route over a skipped sub-path -> conditional.
@@ -520,7 +550,9 @@ mod tests {
         };
         assert_eq!(
             trailing.classify(Method::Get, &pat("/files/<rest..>")),
-            AutoLog::Conditional { overlaps: vec!["GET /files/secret".to_string()] },
+            AutoLog::Conditional {
+                overlaps: vec!["GET /files/secret".to_string()]
+            },
         );
     }
 
@@ -541,7 +573,9 @@ mod tests {
         };
         assert_eq!(
             overlap.classify(Method::Get, &pat("/<x>")),
-            AutoLog::Conditional { overlaps: vec!["GET /a".to_string()] },
+            AutoLog::Conditional {
+                overlaps: vec!["GET /a".to_string()]
+            },
         );
     }
 }

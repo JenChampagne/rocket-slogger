@@ -22,7 +22,7 @@ installation instructions.
 Add this crate to your Rust project:
 
 ```toml
-rocket-slogger = "1.1"
+rocket-slogger = "1.2"
 ```
 
 ### Quick Start
@@ -225,7 +225,7 @@ id, so `transaction_header` requires `transactions`.
 ### When the `local_time` feature is enabled
 
 The exact date and time with time zone of when the middleware received the
-request is shown in the systems local time zone.
+request is shown in the system's local time zone.
 
 Note that the `time` field of when the log was made remains in the UTC time zone.
 
@@ -275,3 +275,35 @@ functions, such as executing a database query.
 
 If you know of a cleaner or simpler way of providing `async` callback functions,
 the suggestions are very much welcome!
+
+### Setting a compile-time maximum log level
+
+Two sets of features set a maximum log level at build time. Any statement above
+the named level is removed during compilation, so it carries no runtime cost,
+not even the branch to check whether it should be emitted.
+
+The `max_level_*` set applies to every build:
+
+- `max_level_off`
+- `max_level_error`
+- `max_level_warn`
+- `max_level_info`
+- `max_level_debug`
+- `max_level_trace`
+
+The `release_max_level_*` set applies only to release builds, which lets a debug
+build keep the chattier levels while a release binary drops them:
+
+- `release_max_level_off`
+- `release_max_level_error`
+- `release_max_level_warn`
+- `release_max_level_info`
+- `release_max_level_debug`
+- `release_max_level_trace`
+
+These pass straight through to the matching `slog` features. See the
+[`slog` documentation](https://docs.rs/slog/latest/slog/#compile-time-log-level-filtering)
+for the full description of how compile-time level filtering behaves.
+
+Note this is a compile-time cutoff, separate from the runtime level control the
+`envlogger` feature provides through `RUST_LOG`.
