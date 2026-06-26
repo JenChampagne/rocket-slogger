@@ -38,12 +38,12 @@ path = "examples/filtering.rs"
 
 [dependencies]
 rocket = "0.5"
-slog = "2.7"
+slog = "2.8"
 slog-envlogger = { version = "2.2", optional = true }
 slog-term = { version = "2.9", optional = true }
 slog-bunyan = { version = "2.5", optional = true }
 chrono = { version = "0.4", optional = true }
-uuid = { version = "1.15", features = ["v4"], optional = true }
+uuid = { version = "1.23", features = ["v4"], optional = true }
 
 [dev-dependencies]
 slog-term = "2.9"
